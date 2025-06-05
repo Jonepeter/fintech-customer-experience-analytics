@@ -1,6 +1,10 @@
 # python 
-__pycache__
 .vscode
+__pycache__
+.ipynb_checkpoints
+.env
+.gitignore 
+>>>>>>> task-1
 
 
 # data
