@@ -46,7 +46,7 @@ def scrape_play_store_reviews(app_id, lang='en', country='us', max_reviews=1000)
         # Select relevant columns
         cols_to_keep = [
             'reviewId', 'content', 'score', 
-            'thumbsUpCount', 'review_date', 'app_name', 'app_version'
+            'thumbsUpCount', 'review_date', 'app_name', 'app_version', 'source'
         ]
         df = df[cols_to_keep]
         
