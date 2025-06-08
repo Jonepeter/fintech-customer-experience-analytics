@@ -36,6 +36,7 @@ class PreprocessReview:
                 keep_default_na=True,  # Keep pandas default NA values
                 encoding='utf-8'  # Specify encoding
             )
+            return df
         except Exception as e:
             print(f"Error loading data: {str(e)}")
             return None
@@ -118,6 +119,14 @@ class PreprocessReview:
         Returns:
             pd.DataFrame: DataFrame with preprocessed reviews
         """
+        # Fill missing values in the text column with empty string
+        df[text_column] = df[text_column].fillna('')
+        
+        # Apply preprocessing
         df['preprocessed_review'] = df[text_column].apply(self.preprocess_review)
+        
+        # Fill any remaining missing values in preprocessed_review with empty string
+        df['preprocessed_review'] = df['preprocessed_review'].fillna('')
+        
         return df
     
