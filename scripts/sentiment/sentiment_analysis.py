@@ -7,6 +7,7 @@ import pandas as pd
 import torch
 from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+import string
 from scipy.special import softmax
 import logging
 
@@ -32,6 +33,22 @@ class SentimentAnalyzer:
         except Exception as e:
             logger.error(f"Error initializing sentiment models: {str(e)}")
             raise
+    
+    def remove_punctuation(self, text):
+        """
+        Remove punctuation from text.
+        
+        Args:
+            text (str): Input text to clean
+            
+        Returns:
+            str: Cleaned text
+        """
+        try:
+            return text.translate(str.maketrans('', '', string.punctuation))
+        except Exception as e:
+            logger.error(f"Error removing punctuation: {str(e)}")
+            return text
 
     def analyze_with_distilbert(self, text):
         """
