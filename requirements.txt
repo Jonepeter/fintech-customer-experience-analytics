@@ -11,6 +11,8 @@ textblob==0.17.1
 vaderSentiment==3.4.1
 spacy==3.7.0
 transformers==4.40.0
+torch==2.3.1
+bertopic==0.17.0
 
 # Utilities
 jupyter==1.0.0
