@@ -2,6 +2,7 @@ from google_play_scraper import app, Sort, reviews_all
 import pandas as pd
 from datetime import datetime
 
+
 def scrape_play_store_reviews(app_id, lang='en', country='us', max_reviews=1000):
     """
     Scrape reviews from Google Play Store
@@ -39,12 +40,18 @@ def scrape_play_store_reviews(app_id, lang='en', country='us', max_reviews=1000)
         # Convert timestamp to readable date
         df['review_date'] = pd.to_datetime(df['at'], unit='ms')
         
+        # add source 
+        df['source'] = 'Google Play Store'
+        
         # Select relevant columns
         cols_to_keep = [
             'reviewId', 'content', 'score', 
-            'thumbsUpCount', 'review_date', 'app_name', 'app_version'
+            'thumbsUpCount', 'review_date', 'app_name', 'app_version', 'source'
         ]
         df = df[cols_to_keep]
+        
+        df = df.rename(columns={'content': 'review'})
+        df = df.rename(columns={'score': 'rating'})
         
         return df
     
