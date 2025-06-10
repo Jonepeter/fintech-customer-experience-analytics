@@ -58,7 +58,7 @@ class SentimentAnalyzer:
             text (str): Input text to analyze
             
         Returns:
-            dict: Dictionary containing sentiment label and scores
+            tuple: (sentiment_label, score) where label is POSITIVE/NEGATIVE and score is confidence
         """
         try:
             inputs = self.tokenizer(
@@ -70,19 +70,13 @@ class SentimentAnalyzer:
             with torch.no_grad():
                 logits = self.model(**inputs).logits
             probs = softmax(logits.numpy()[0])
+            label = self.model.config.id2label[logits.argmax().item()]
+            score = probs[1] if label == 'POSITIVE' else probs[0]
             
-            return {
-                'sentiment_label': self.model.config.id2label[logits.argmax().item()],
-                'positive_score': probs[1],
-                'negative_score': probs[0]
-            }
+            return label, score
         except Exception as e:
             logger.error(f"Error in DistilBERT analysis: {str(e)}")
-            return {
-                'sentiment_label': 'ERROR',
-                'positive_score': 0,
-                'negative_score': 0
-            }
+            return 'ERROR', 0.0
 
     def analyze_with_vader(self, text):
         """
@@ -92,24 +86,19 @@ class SentimentAnalyzer:
             text (str): Input text to analyze
             
         Returns:
-            dict: Dictionary containing sentiment label and score
+            tuple: (sentiment_label, score) where label is POSITIVE/NEGATIVE/NEUTRAL and score is compound score
         """
         try:
             scores = self.vader_analyzer.polarity_scores(text)
-            return {
-                'sentiment_label': (
-                    'POSITIVE' if scores['compound'] > 0.05 
-                    else 'NEGATIVE' if scores['compound'] < -0.05 
-                    else 'NEUTRAL'
-                ),
-                'sentiment_score': scores['compound']
-            }
+            label = (
+                'POSITIVE' if scores['compound'] > 0.05 
+                else 'NEGATIVE' if scores['compound'] < -0.05 
+                else 'NEUTRAL'
+            )
+            return label, scores['compound']
         except Exception as e:
             logger.error(f"Error in VADER analysis: {str(e)}")
-            return {
-                'sentiment_label': 'ERROR',
-                'sentiment_score': 0
-            }
+            return 'ERROR', 0.0
 
 def aggregate_sentiment(df):
     """
@@ -122,9 +111,9 @@ def aggregate_sentiment(df):
         pd.DataFrame: Aggregated sentiment statistics
     """
     try:
-        return df.groupby(['bank_name', 'rating']).agg({
-            'sentiment_score': ['mean', 'count'],
-            'sentiment_label': lambda x: x.value_counts().to_dict()
+        return df.groupby(['app_name', 'rating']).agg({
+            'sentiment_veder_score': ['mean', 'count'],
+            'sentiment_veder_label': lambda x: x.value_counts().to_dict()
         }).reset_index()
     except Exception as e:
         logger.error(f"Error aggregating sentiment: {str(e)}")
