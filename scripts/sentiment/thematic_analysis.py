@@ -3,13 +3,16 @@ thematic_analysis.py
 Script for performing thematic analysis on bank reviews.
 """
 
-import spacy
-from sklearn.feature_extraction.text import TfidfVectorizer
-# from bertopic import BERTopic
 import pandas as pd
-import logging
-from collections import defaultdict
 import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
+import logging
+import re
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize, wordpunct_tokenize
+from nltk.stem import WordNetLemmatizer
+import nltk
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,7 +23,14 @@ class ThematicAnalyzer:
     def __init__(self):
         """Initialize NLP models and theme mappings."""
         try:
-            self.nlp = spacy.load("en_core_web_sm")
+            # Download required NLTK data
+            nltk.download('punkt')
+            nltk.download('stopwords')
+            nltk.download('wordnet')
+            
+            self.lemmatizer = WordNetLemmatizer()
+            self.stop_words = set(stopwords.words('english'))
+            
             # Enhanced theme mapping with more specific keywords and phrases
             self.theme_mapping = {
                 'Account Access & Security': [
@@ -56,7 +66,7 @@ class ThematicAnalyzer:
 
     def preprocess_text(self, text):
         """
-        Preprocess text by lowercasing, lemmatizing, and removing stopwords.
+        Preprocess text by cleaning, tokenizing, removing stopwords, and lemmatizing.
         
         Args:
             text (str): Input text to preprocess
@@ -65,14 +75,23 @@ class ThematicAnalyzer:
             str: Processed text
         """
         try:
-            doc = self.nlp(text.lower())
-            return " ".join([
-                token.lemma_ for token in doc 
-                if not token.is_stop 
-                and not token.is_punct 
-                and not token.is_space
-                and token.is_alpha
-            ])
+            # Convert to lowercase
+            text = text.lower()
+            
+            # Remove special characters and digits
+            text = re.sub(r'[^a-zA-Z\s]', '', text)
+            
+            # Tokenize
+            tokens = wordpunct_tokenize(text)
+            
+            # Remove stopwords and lemmatize
+            processed_tokens = [
+                self.lemmatizer.lemmatize(token)
+                for token in tokens
+                if token not in self.stop_words and len(token) > 2
+            ]
+            
+            return " ".join(processed_tokens)
         except Exception as e:
             logger.error(f"Error preprocessing text: {str(e)}")
             return ""
@@ -90,12 +109,15 @@ class ThematicAnalyzer:
             list: Top keywords with their TF-IDF scores
         """
         try:
+            # Preprocess all texts
+            processed_texts = [self.preprocess_text(text) for text in texts]
+            
             tfidf = TfidfVectorizer(
                 ngram_range=ngram_range, 
                 max_features=max_features,
                 stop_words='english'
             )
-            tfidf_matrix = tfidf.fit_transform(texts)
+            tfidf_matrix = tfidf.fit_transform(processed_texts)
             feature_names = tfidf.get_feature_names_out()
             
             # Calculate average TF-IDF scores for each feature
@@ -103,6 +125,10 @@ class ThematicAnalyzer:
             
             # Create list of (keyword, score) tuples
             keywords_with_scores = list(zip(feature_names, avg_scores))
+            
+            # Filter out low-scoring keywords
+            keywords_with_scores = [(kw, score) for kw, score in keywords_with_scores if score > 0.01]
+            
             return sorted(keywords_with_scores, key=lambda x: x[1], reverse=True)
         except Exception as e:
             logger.error(f"Error in TF-IDF keyword extraction: {str(e)}")
@@ -119,13 +145,16 @@ class ThematicAnalyzer:
             tuple: (primary_theme, theme_scores) where theme_scores is a dict of theme:score
         """
         try:
-            doc = self.nlp(text.lower())
+            # Preprocess text
+            processed_text = self.preprocess_text(text)
+            tokens = wordpunct_tokenize(processed_text)
+            
             theme_scores = {theme: 0 for theme in self.theme_mapping}
             
             # Count keyword matches for each theme
-            for token in doc:
+            for token in tokens:
                 for theme, keywords in self.theme_mapping.items():
-                    if token.lemma_ in [kw.lower() for kw in keywords]:
+                    if token in [kw.lower() for kw in keywords]:
                         theme_scores[theme] += 1
             
             # Calculate confidence scores
@@ -142,33 +171,57 @@ class ThematicAnalyzer:
             logger.error(f"Error in rule-based theme assignment: {str(e)}")
             return 'Error', {'Error': 1.0}
 
-    # def analyze_with_bertopic(self, texts, n_topics=5):
-    #     """
-    #     Perform topic modeling using BERTopic with enhanced configuration.
+    def analyze_with_lda(self, texts, n_topics=5, max_features=1000):
+        """
+        Perform topic modeling using Latent Dirichlet Allocation (LDA).
         
-    #     Args:
-    #         texts (iterable): Collection of texts to analyze
-    #         n_topics (int): Number of topics to extract
+        Args:
+            texts (iterable): Collection of texts to analyze
+            n_topics (int): Number of topics to extract
+            max_features (int): Maximum number of features to consider
             
-    #     Returns:
-    #         tuple: (topics, probabilities, model, topic_keywords)
-    #     """
-    #     try:
-    #         topic_model = BERTopic(
-    #             language="english",
-    #             calculate_probabilities=True,
-    #             nr_topics=n_topics,
-    #             min_topic_size=5
-    #         )
-    #         topics, probs = topic_model.fit_transform(texts)
+        Returns:
+            tuple: (topic_assignments, topic_keywords, model)
+        """
+        try:
+            # Preprocess texts
+            processed_texts = [self.preprocess_text(text) for text in texts]
             
-    #         # Extract keywords for each topic
-    #         topic_keywords = topic_model.get_topic_info()
+            # Create document-term matrix
+            vectorizer = CountVectorizer(
+                max_features=max_features,
+                stop_words='english',
+                ngram_range=(1, 2)
+            )
+            doc_term_matrix = vectorizer.fit_transform(processed_texts)
             
-    #         return topics, probs, topic_model, topic_keywords
-    #     except Exception as e:
-    #         logger.error(f"Error in BERTopic analysis: {str(e)}")
-    #         return None, None, None, None
+            # Fit LDA model
+            lda_model = LatentDirichletAllocation(
+                n_components=n_topics,
+                max_iter=10,
+                learning_method='online',
+                random_state=42,
+                batch_size=128,
+                verbose=0
+            )
+            
+            # Get topic assignments
+            topic_assignments = lda_model.fit_transform(doc_term_matrix)
+            
+            # Get top keywords for each topic
+            feature_names = vectorizer.get_feature_names_out()
+            topic_keywords = []
+            
+            for topic_idx, topic in enumerate(lda_model.components_):
+                top_keywords_idx = topic.argsort()[:-10-1:-1]
+                top_keywords = [(feature_names[i], topic[i]) for i in top_keywords_idx]
+                topic_keywords.append(top_keywords)
+            
+            return topic_assignments, topic_keywords, lda_model
+            
+        except Exception as e:
+            logger.error(f"Error in LDA analysis: {str(e)}")
+            return None, None, None
 
     def analyze_reviews(self, reviews_df):
         """
@@ -181,22 +234,26 @@ class ThematicAnalyzer:
             pd.DataFrame: Enhanced DataFrame with thematic analysis results
         """
         try:
-            # Preprocess all reviews
-            processed_texts = reviews_df['review_text'].apply(self.preprocess_text)
-            
+           
             # Extract keywords
-            keywords = self.extract_keywords_tfidf(processed_texts)
+            keywords = self.extract_keywords_tfidf(reviews_df['review'])
             
             # Assign themes
-            theme_results = reviews_df['review_text'].apply(self.assign_themes_rulebased)
+            theme_results = reviews_df['review'].apply(self.assign_themes_rulebased)
             reviews_df['primary_theme'] = theme_results.apply(lambda x: x[0])
             reviews_df['theme_scores'] = theme_results.apply(lambda x: x[1])
             
-            # Perform BERTopic analysis
-            topics, probs, model, topic_keywords = self.analyze_with_bertopic(processed_texts)
-            if topics is not None:
-                reviews_df['topic_id'] = topics
-                reviews_df['topic_probabilities'] = probs.tolist()
+            # Perform LDA analysis
+            topic_assignments, topic_keywords, lda_model = self.analyze_with_lda(reviews_df['review'])
+            if topic_assignments is not None:
+                # Get dominant topic for each review
+                reviews_df['topic_id'] = topic_assignments.argmax(axis=1)
+                reviews_df['topic_probabilities'] = topic_assignments.tolist()
+                
+                # Add topic keywords to the DataFrame
+                reviews_df['topic_keywords'] = reviews_df['topic_id'].apply(
+                    lambda x: [kw for kw, score in topic_keywords[x]]
+                )
             
             return reviews_df
         except Exception as e:
