@@ -6,6 +6,7 @@ from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 import re
 import string
+import emoji
 
 class PreprocessReview:
     def __init__(self):
@@ -15,6 +16,7 @@ class PreprocessReview:
         nltk.download('wordnet')
         self.lemmatizer = WordNetLemmatizer()
         self.stop_words = set(stopwords.words('english'))
+    
     
     def load_data(self, file_path):
         """
@@ -91,14 +93,17 @@ class PreprocessReview:
         """
         return [self.lemmatizer.lemmatize(token) for token in tokens]
     
-    def preprocess_review(self, text):
+    def preprocess_review(self, text, emoji_mode='convert'):
         """
         Complete preprocessing pipeline for a single review
         Args:
             text (str): Input review text
+            emoji_mode (str): How to handle emojis - 'remove' or 'convert'
         Returns:
             str: Preprocessed text as a single string
         """
+        # Handle emojis
+        text = self.handle_emojis(text, mode=emoji_mode)
         # Clean text
         cleaned_text = self.clean_text(text)
         # Tokenize
@@ -110,12 +115,13 @@ class PreprocessReview:
         # Join tokens back into a string
         return ' '.join(tokens)
     
-    def preprocess_reviews(self, df, text_column):
+    def preprocess_reviews(self, df, text_column, emoji_mode='convert'):
         """
         Preprocess all reviews in a DataFrame
         Args:
             df (pd.DataFrame): DataFrame containing reviews
             text_column (str): Name of the column containing review text
+            emoji_mode (str): How to handle emojis - 'remove' or 'convert'
         Returns:
             pd.DataFrame: DataFrame with preprocessed reviews
         """
@@ -123,10 +129,56 @@ class PreprocessReview:
         df[text_column] = df[text_column].fillna('')
         
         # Apply preprocessing
-        df['preprocessed_review'] = df[text_column].apply(self.preprocess_review)
+        df['preprocessed_review'] = df[text_column].apply(
+            lambda x: self.preprocess_review(x, emoji_mode=emoji_mode)
+        )
         
         # Fill any remaining missing values in preprocessed_review with empty string
         df['preprocessed_review'] = df['preprocessed_review'].fillna('')
         
         return df
     
+    def handle_emojis(self, text, mode='convert'):
+        """
+        Handle emojis in text by either removing them or converting to text descriptions
+        Args:
+            text (str): Input text containing emojis
+            mode (str): 'remove' to remove emojis, 'convert' to convert to text descriptions
+        Returns:
+            str: Text with emojis handled according to mode
+        """
+        if not isinstance(text, str):
+            return ""
+            
+        if mode == 'remove':
+            # Remove all emojis
+            return emoji.replace_emoji(text, replace='')
+        elif mode == 'convert':
+            # Convert emojis to their text descriptions
+            return emoji.demojize(text, delimiters=(' ', ' '))
+        else:
+            raise ValueError("Mode must be either 'remove' or 'convert'")
+
+    # filter emoji 
+    def filter_emoji_rows(self, df, text_column):
+        """
+        Filter DataFrame to separate rows with and without emojis
+        Args:
+            df (pd.DataFrame): DataFrame containing reviews
+            text_column (str): Name of the column containing review text
+        Returns:
+            tuple: (DataFrame with emoji rows, DataFrame without emoji rows)
+        """
+        # Function to check if text contains emoji
+        def contains_emoji(text):
+            if not isinstance(text, str):
+                return False
+            return any(char in emoji.EMOJI_DATA for char in text)
+        
+        # Create boolean mask for rows with emojis
+        emoji_mask = df[text_column].apply(contains_emoji)
+        
+        # Split DataFrame into rows with and without emojis
+        emoji_rows = df[emoji_mask].copy()
+        
+        return emoji_rows
